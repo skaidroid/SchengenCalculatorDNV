@@ -156,6 +156,19 @@ button.icon:hover { color: var(--over); }
 .ln.today { border-color: var(--text); }
 .ln.dnv { border-color: var(--accent-2); }
 
+.uge { border-left: 4px solid var(--accent-2); }
+.uge.passed { border-left-color: var(--ok); }
+.uge-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.uge-date { font-size: 1.6rem; font-weight: 800; margin: 4px 0 2px; }
+.uge-count { text-align: right; }
+.uge-count .num { font-size: 2rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.uge-count .num span { font-size: 1rem; font-weight: 600; color: var(--muted); margin-left: 4px; }
+.uge-count .lbl { font-size: .8rem; color: var(--muted); }
+.uge-bar { height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; margin: 14px 0 10px; }
+.uge-bar span { display: block; height: 100%; background: var(--accent-2); }
+.uge.passed .uge-bar span { background: var(--ok); }
+.uge-msg { margin: 0 0 4px; }
+
 .info ul { padding-left: 20px; margin: 8px 0; }
 .info li { margin-bottom: 6px; }
 .disclaimer { font-size: .85rem; color: var(--muted); border-left: 3px solid var(--accent-2); padding-left: 10px; }
@@ -165,6 +178,7 @@ button.icon:hover { color: var(--over); }
   .grid2, .grid3, .grid3.two, .plan { grid-template-columns: 1fr; }
   .grid3 { gap: 0; }
   .status { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .uge-count { text-align: left; }
   .trip-labels { display: none; }
   .trip { grid-template-columns: 1fr 1fr 40px; border-bottom: 1px solid var(--border); padding: 10px 0; }
   .trip .idx { display: none; }

@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { analyse, series, maxStayFrom, todayDay, toDay, toIso, formatDay, MAX_DAYS } from './schengen.js'
 import UsageChart from './UsageChart.vue'
+import { ugeDeadline, UGE_DAYS } from './uge.js'
 
 const STORAGE_KEY = 'schengen-dnv-calculator:v1'
 
@@ -73,6 +74,9 @@ const chart = computed(() => {
 // When the earliest re-entry already allows 90 days, the separate "90-day stay" card would just repeat it
 const fullStayAtReentry = computed(() => r.value.nextEntry != null && r.value.nextEntryStay >= MAX_DAYS)
 
+const uge = computed(() => ugeDeadline(dnvDate.value, refDay.value))
+const ugePct = computed(() => (uge.value?.supported ? Math.min(100, (uge.value.elapsed / UGE_DAYS) * 100) : 0))
+
 const fmt = d => (d == null ? '—' : formatDay(d))
 const daysFrom = d => {
   if (d == null) return ''
@@ -85,9 +89,10 @@ const daysFrom = d => {
 <template>
   <header class="hero">
     <div class="wrap">
-      <h1>Schengen 90/180 Calculator</h1>
+      <h1>Schengen 90/180 &amp; UGE Work Days Calculator</h1>
       <p class="sub">For digital nomads with a <strong>pending Spanish Digital Nomad Visa</strong> application —
-        overstays are counted and shown, not rejected.</p>
+        overstays are counted and shown, not rejected. Enter your application date to also calculate
+        the <strong>20 UGE work days</strong> the UGE has to respond, skipping weekends and Madrid holidays.</p>
     </div>
   </header>
 
@@ -121,7 +126,7 @@ const daysFrom = d => {
         <label class="field">
           <span>DNV application submitted <small>(optional)</small></span>
           <input type="date" v-model="dnvDate" />
-          <small class="hint">Days after this date are shown as “covered by pending application”.</small>
+          <small class="hint">Days after this date are shown as “covered by pending application”. This also shows when the UGE has to respond.</small>
         </label>
         <label class="field">
           <span>Calculate as of</span>
@@ -129,6 +134,34 @@ const daysFrom = d => {
           <small class="hint">Defaults to today. Change it to see a past or future date.</small>
         </label>
       </div>
+    </section>
+
+    <section class="card uge" v-if="uge" :class="{ passed: uge.passed }">
+      <template v-if="!uge.supported">
+        <h2>UGE response deadline</h2>
+        <p class="hint">The deadline calculator covers applications submitted in 2026 or 2027 (it needs the Madrid holiday calendar for those years).</p>
+      </template>
+      <template v-else>
+        <div class="uge-head">
+          <div>
+            <div class="stat-lbl">UGE must respond by</div>
+            <div class="uge-date">{{ fmt(uge.deadline) }}</div>
+            <div class="stat-sub">{{ daysFrom(uge.deadline) }} · {{ uge.calendarDays }} calendar days after submission</div>
+          </div>
+          <div class="uge-count">
+            <div class="num">{{ uge.passed ? UGE_DAYS : uge.elapsed }}<span>/ {{ UGE_DAYS }}</span></div>
+            <div class="lbl">business days elapsed</div>
+          </div>
+        </div>
+        <div class="uge-bar" role="progressbar" :aria-valuenow="uge.elapsed" aria-valuemin="0" :aria-valuemax="UGE_DAYS"><span :style="{ width: ugePct + '%' }"></span></div>
+        <p class="uge-msg" v-if="uge.passed">The 20-business-day period ended on <strong>{{ fmt(uge.deadline) }}</strong>. If no decision was notified by then, the application is generally considered approved by <em>silencio administrativo positivo</em>. Ask an immigration lawyer how to get a certificate confirming it.</p>
+        <p class="uge-msg" v-else><strong>{{ uge.remaining }}</strong> business day{{ uge.remaining === 1 ? '' : 's' }} left, counted from {{ fmt(refDay) }}.</p>
+        <ul class="facts">
+          <li>Day 0: <strong>{{ fmt(uge.day0) }}</strong>(the day you submitted, even if it was a weekend or holiday). Day 1 is the next business day after it.</li>
+          <li>Saturdays, Sundays and national, Comunidad de Madrid and Madrid city holidays don't count.<template v-if="uge.skipped.length"> Holidays skipped in your period: <span v-for="(h, i) in uge.skipped" :key="h.day">{{ i ? ', ' : '' }}{{ fmt(h.day) }} ({{ h.name }})</span>.</template></li>
+        </ul>
+        <p class="hint">Estimated under Ley 14/2013 art. 76 and Ley 39/2015 art. 30. The time it takes to deliver the decision to you, and any request for more documents (requerimiento), can pause or shift the deadline.</p>
+      </template>
     </section>
 
     <template v-if="hasData">

@@ -13,6 +13,7 @@ while the application is pending. Stays above 90 days are **tolerated**: they're
 - Earliest date for 7 / 14 / 30 / 60 / 90-day trips, plus a "check a specific entry date" tool
 - Overstay summary relative to the DNV application date (flags applications filed after the limit was exceeded)
 - Rolling day-count chart
+- UGE response deadline: 20 business days from the application date (day 0), skipping weekends and national, Comunidad de Madrid and Madrid city holidays (applications submitted in 2026–2027; holidays in `src/uge.js`)
 - Data stays in the browser (localStorage). Light & dark mode, mobile friendly.
 
 ## Develop
