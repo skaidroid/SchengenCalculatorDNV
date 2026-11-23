@@ -66,6 +66,14 @@ export const holidayInfo = day => {
 }
 export const isBusinessDay = day => !isWeekend(day) && !holidaySet.has(day)
 
+/** Business days from `from` to `to`, both inclusive (0 if the range is empty or invalid). */
+export function businessDaysBetween(from, to) {
+  if (from == null || to == null) return 0
+  let n = 0
+  for (let d = from; d <= to; d++) if (isBusinessDay(d)) n++
+  return n
+}
+
 /**
  * @param submittedIso 'YYYY-MM-DD'
  * @param ref day number used for "elapsed / remaining"
@@ -119,7 +127,7 @@ export function ugeDeadline(submittedIso, ref, requests = []) {
   const pauses = valid
     .filter(p => p.from <= limit)
     .sort((a, b) => a.from - b.from)
-    .map(p => ({ ...p, calendarDays: p.to == null ? null : p.to - p.from + 1 }))
+    .map(p => ({ ...p, businessDays: p.to == null ? null : businessDaysBetween(p.from, p.to) }))
   const current = pauses.find(p => ref >= p.from && (p.to == null || ref <= p.to)) ?? null
   // Resume day for the current pause, following any overlapping/adjacent closed pauses
   let resumes = current && current.to != null ? current.to + 1 : null

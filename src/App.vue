@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { analyse, series, maxStayFrom, todayDay, toDay, toIso, formatDay, MAX_DAYS } from './schengen.js'
 import UsageChart from './UsageChart.vue'
-import { ugeDeadline, UGE_DAYS } from './uge.js'
+import { ugeDeadline, businessDaysBetween, UGE_DAYS } from './uge.js'
 import { t, lang, locale, LANGS } from './i18n.js'
 
 const STORAGE_KEY = 'schengen-dnv-calculator:v1'
@@ -90,9 +90,10 @@ const chart = computed(() => {
 const fullStayAtReentry = computed(() => r.value.nextEntry != null && r.value.nextEntryStay >= MAX_DAYS)
 
 const uge = computed(() => ugeDeadline(dnvDate.value, refDay.value, docsRequest.value.enabled ? docsRequest.value.items : []))
+// UGE work days inside a request's range (weekends and holidays don't count)
 const requestLength = q => {
   const a = toDay(q.requested), b = toDay(q.responded)
-  return a != null && b != null && b >= a ? b - a + 1 : null
+  return a != null && b != null && b >= a ? businessDaysBetween(a, b) : null
 }
 const ugePct = computed(() => (uge.value?.supported ? Math.min(100, (uge.value.elapsed / UGE_DAYS) * 100) : 0))
 
@@ -194,7 +195,7 @@ const skippedList = computed(() => (uge.value?.skipped ?? []).map(holidayLabel).
           <li v-html="t('ugeDay0', { date: fmt(uge.day0) })"></li>
           <li>{{ t('ugeWeekends') }}<template v-if="uge.skipped.length">{{ t('ugeSkipped', { list: skippedList }) }}</template></li>
           <li v-for="p in uge.pauses" :key="p.index" v-html="p.to != null
-            ? t('ugePause', { i: p.index + 1, from: fmt(p.from), to: fmt(p.to), n: p.calendarDays })
+            ? t('ugePause', { i: p.index + 1, from: fmt(p.from), to: fmt(p.to), n: p.businessDays })
             : t('ugePauseOpen', { i: p.index + 1, from: fmt(p.from) })"></li>
         </ul>
 
@@ -214,7 +215,7 @@ const skippedList = computed(() => (uge.value?.skipped ?? []).map(holidayLabel).
                 <label><span class="m-label">{{ t('requested') }}</span><input type="date" v-model="q.requested" :min="dnvDate" :aria-label="t('reqDateAria', { i: i + 1 })" /></label>
                 <label><span class="m-label">{{ t('responded') }}</span><input type="date" v-model="q.responded" :min="q.requested" :aria-label="t('reqRespAria', { i: i + 1 })" /></label>
                 <span class="len">
-                  <span v-if="requestLength(q)">{{ requestLength(q) }}<small>{{ t('daysUnit', { n: requestLength(q) }) }}</small></span>
+                  <span v-if="requestLength(q) != null">{{ requestLength(q) }}<small>{{ t('workDaysUnit', { n: requestLength(q) }) }}</small></span>
                   <span v-if="q.requested && !q.responded" class="tag">{{ t('waiting') }}</span>
                 </span>
                 <button class="icon" @click="removeRequest(i)" :aria-label="t('removeReqAria', { i: i + 1 })" :title="t('remove')">✕</button>
