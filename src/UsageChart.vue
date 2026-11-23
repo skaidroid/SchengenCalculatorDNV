@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { formatDay, MAX_DAYS } from './schengen.js'
+import { t, locale } from './i18n.js'
 
 const props = defineProps({ data: Array, today: Number, dnv: Number })
 
@@ -18,7 +19,7 @@ const ticks = computed(() => {
   const out = []
   props.data.forEach((p, i) => {
     const d = new Date(p.day * 86400000)
-    if (d.getUTCDate() === 1) out.push({ i, label: d.toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' }) + (d.getUTCMonth() === 0 ? ` ${d.getUTCFullYear()}` : '') })
+    if (d.getUTCDate() === 1) out.push({ i, label: d.toLocaleDateString(locale.value, { month: 'short', timeZone: 'UTC' }) + (d.getUTCMonth() === 0 ? ` ${d.getUTCFullYear()}` : '') })
   })
   // thin out labels on narrow ranges
   const step = Math.ceil(out.length / 12)
@@ -38,7 +39,7 @@ function onMove(e) {
 <template>
   <div class="chart" v-if="data.length">
     <svg :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="none" @mousemove="onMove" @mouseleave="hover = null" role="img"
-      aria-label="Days used in rolling 180-day window over time">
+      :aria-label="t('chartAria')">
       <line v-for="v in [0, 30, 60]" :key="v" :x1="PAD_L" :x2="W - PAD_R" :y1="y(v)" :y2="y(v)" class="grid" />
       <text v-for="v in [0, 30, 60, 90]" :key="'l' + v" :x="PAD_L - 6" :y="y(v) + 4" class="axis" text-anchor="end">{{ v }}</text>
       <rect v-for="(p, i) in data" :key="p.day" :x="x(i)" :y="y(p.used)" :width="Math.max(bw, 0.6)" :height="y(0) - y(p.used)"
@@ -50,16 +51,16 @@ function onMove(e) {
       <line v-if="hover != null" :x1="x(hover) + bw / 2" :x2="x(hover) + bw / 2" :y1="PAD_T" :y2="y(0)" class="hover" />
     </svg>
     <div class="chart-tip" v-if="hover != null">
-      {{ formatDay(data[hover].day) }} · <strong>{{ data[hover].used }}</strong> days in window
-      <span v-if="data[hover].present"> · in Schengen</span>
+      <span v-html="t('chartTip', { date: formatDay(data[hover].day, locale), n: data[hover].used })"></span>
+      <span v-if="data[hover].present"> · {{ t('chartIn') }}</span>
     </div>
     <div class="legend">
-      <span><i class="sw in"></i>In Schengen</span>
-      <span><i class="sw out"></i>Outside</span>
-      <span><i class="sw over"></i>Over 90</span>
-      <span><i class="ln limit"></i>90-day limit</span>
-      <span><i class="ln today"></i>Selected date</span>
-      <span v-if="dnv != null"><i class="ln dnv"></i>DNV filed</span>
+      <span><i class="sw in"></i>{{ t('chartIn') }}</span>
+      <span><i class="sw out"></i>{{ t('chartOut') }}</span>
+      <span><i class="sw over"></i>{{ t('chartOver') }}</span>
+      <span><i class="ln limit"></i>{{ t('chartLimit') }}</span>
+      <span><i class="ln today"></i>{{ t('chartSelected') }}</span>
+      <span v-if="dnv != null"><i class="ln dnv"></i>{{ t('chartDnv') }}</span>
     </div>
   </div>
 </template>

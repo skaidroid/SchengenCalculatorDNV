@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { analyse, series, maxStayFrom, todayDay, toDay, toIso, formatDay, MAX_DAYS } from './schengen.js'
 import UsageChart from './UsageChart.vue'
 import { ugeDeadline, UGE_DAYS } from './uge.js'
+import { t, lang, locale, LANGS } from './i18n.js'
 
 const STORAGE_KEY = 'schengen-dnv-calculator:v1'
 
@@ -17,12 +18,25 @@ function load() {
 const saved = load()
 const trips = ref(saved?.trips?.length ? saved.trips : [{ entry: '', exit: '' }])
 const dnvDate = ref(saved?.dnvDate ?? '')
+const emptyRequest = () => ({ requested: '', responded: '' })
+function loadDocsRequest(s) {
+  if (s && Array.isArray(s.items)) return { enabled: !!s.enabled, items: s.items.length ? s.items : [emptyRequest()] }
+  // Earlier format: a single { enabled, requested, responded }
+  if (s) return { enabled: !!s.enabled, items: [{ requested: s.requested ?? '', responded: s.responded ?? '' }] }
+  return { enabled: false, items: [emptyRequest()] }
+}
+const docsRequest = ref(loadDocsRequest(saved?.docsRequest))
+function addRequest() { docsRequest.value.items.push(emptyRequest()) }
+function removeRequest(i) {
+  docsRequest.value.items.splice(i, 1)
+  if (!docsRequest.value.items.length) addRequest()
+}
 const refDate = ref(toIso(todayDay()))
 const planEntry = ref('')
 
-watch([trips, dnvDate], () => {
+watch([trips, dnvDate, docsRequest], () => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ trips: trips.value, dnvDate: dnvDate.value }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ trips: trips.value, dnvDate: dnvDate.value, docsRequest: docsRequest.value }))
   } catch { /* ignore */ }
 }, { deep: true })
 
@@ -32,9 +46,10 @@ function removeTrip(i) {
   if (!trips.value.length) addTrip()
 }
 function clearAll() {
-  if (!confirm('Remove all trips and the DNV date?')) return
+  if (!confirm(t('confirmClear'))) return
   trips.value = [{ entry: '', exit: '' }]
   dnvDate.value = ''
+  docsRequest.value = loadDocsRequest(null)
 }
 
 const refDay = computed(() => toDay(refDate.value) ?? todayDay())
@@ -74,93 +89,143 @@ const chart = computed(() => {
 // When the earliest re-entry already allows 90 days, the separate "90-day stay" card would just repeat it
 const fullStayAtReentry = computed(() => r.value.nextEntry != null && r.value.nextEntryStay >= MAX_DAYS)
 
-const uge = computed(() => ugeDeadline(dnvDate.value, refDay.value))
+const uge = computed(() => ugeDeadline(dnvDate.value, refDay.value, docsRequest.value.enabled ? docsRequest.value.items : []))
+const requestLength = q => {
+  const a = toDay(q.requested), b = toDay(q.responded)
+  return a != null && b != null && b >= a ? b - a + 1 : null
+}
 const ugePct = computed(() => (uge.value?.supported ? Math.min(100, (uge.value.elapsed / UGE_DAYS) * 100) : 0))
 
-const fmt = d => (d == null ? '—' : formatDay(d))
+const fmt = d => (d == null ? '—' : formatDay(d, locale.value))
+const fmtShort = d => formatDay(d, locale.value, { weekday: 'short', day: 'numeric', month: 'short' })
 const daysFrom = d => {
   if (d == null) return ''
   const n = d - refDay.value
-  if (n === 0) return 'today'
-  return n > 0 ? `in ${n} day${n === 1 ? '' : 's'}` : `${-n} day${n === -1 ? '' : 's'} ago`
+  if (n === 0) return t('today')
+  return n > 0 ? t('inDays', { n }) : t('daysAgo', { n: -n })
 }
+const holidayLabel = h => {
+  const notes = [h.city && t('holidayCity'), h.moved != null && t('holidayMoved', { date: fmtShort(h.moved) })].filter(Boolean)
+  return `${fmt(h.day)} (${h.name}${notes.length ? `, ${notes.join(', ')}` : ''})`
+}
+const skippedList = computed(() => (uge.value?.skipped ?? []).map(holidayLabel).join('; '))
 </script>
 
 <template>
   <header class="hero">
     <div class="wrap">
-      <h1>Schengen 90/180 &amp; UGE Work Days Calculator</h1>
-      <p class="sub">For digital nomads with a <strong>pending Spanish Digital Nomad Visa</strong> application —
-        overstays are counted and shown, not rejected. Enter your application date to also calculate
-        the <strong>20 UGE work days</strong> the UGE has to respond, skipping weekends and Madrid holidays.</p>
+      <div class="lang-switch" role="group" :aria-label="t('language')">
+        <button v-for="(name, code) in LANGS" :key="code" :class="{ active: lang === code }" :aria-pressed="lang === code" :lang="code" @click="lang = code">{{ name }}</button>
+      </div>
+      <h1>{{ t('title') }}</h1>
+      <p class="sub" v-html="t('sub')"></p>
     </div>
   </header>
 
   <main class="wrap">
     <section class="card">
       <div class="card-head">
-        <h2>Your Schengen stays</h2>
-        <button class="ghost small" @click="clearAll">Clear all</button>
+        <h2>{{ t('staysTitle') }}</h2>
+        <button class="ghost small" @click="clearAll">{{ t('clearAll') }}</button>
       </div>
-      <p class="hint">Entry and exit days both count as days in Schengen. Leave <em>exit</em> empty if you are still inside.</p>
+      <p class="hint" v-html="t('staysHint')"></p>
 
       <div class="trips">
         <div class="trip trip-labels" aria-hidden="true">
-          <span>#</span><span>Entry</span><span>Exit</span><span>Days</span><span></span>
+          <span>#</span><span>{{ t('entry') }}</span><span>{{ t('exit') }}</span><span>{{ t('days') }}</span><span></span>
         </div>
-        <div v-for="(t, i) in trips" :key="i" class="trip" :class="{ invalid: r.errors[i] }">
+        <div v-for="(tr, i) in trips" :key="i" class="trip" :class="{ invalid: r.errors[i] }">
           <span class="idx">{{ i + 1 }}</span>
-          <label><span class="m-label">Entry</span><input type="date" v-model="t.entry" :aria-label="`Trip ${i + 1} entry date`" /></label>
-          <label><span class="m-label">Exit</span><input type="date" v-model="t.exit" :min="t.entry" :aria-label="`Trip ${i + 1} exit date`" /></label>
+          <label><span class="m-label">{{ t('entry') }}</span><input type="date" v-model="tr.entry" :aria-label="t('tripEntryAria', { i: i + 1 })" /></label>
+          <label><span class="m-label">{{ t('exit') }}</span><input type="date" v-model="tr.exit" :min="tr.entry" :aria-label="t('tripExitAria', { i: i + 1 })" /></label>
           <span class="len">
-            <span v-if="tripLength(t)">{{ tripLength(t) }}<small> days</small></span>
-            <span v-if="t.entry && !t.exit" class="tag">ongoing</span>
+            <span v-if="tripLength(tr)">{{ tripLength(tr) }}<small>{{ t('daysUnit', { n: tripLength(tr) }) }}</small></span>
+            <span v-if="tr.entry && !tr.exit" class="tag">{{ t('ongoing') }}</span>
           </span>
-          <button class="icon" @click="removeTrip(i)" :aria-label="`Remove trip ${i + 1}`" title="Remove">✕</button>
-          <p v-if="r.errors[i]" class="err">{{ r.errors[i] }}</p>
+          <button class="icon" @click="removeTrip(i)" :aria-label="t('removeTripAria', { i: i + 1 })" :title="t('remove')">✕</button>
+          <p v-if="r.errors[i]" class="err">{{ t('err_' + r.errors[i]) }}</p>
         </div>
       </div>
-      <button class="primary" @click="addTrip">+ Add stay</button>
+      <button class="primary" @click="addTrip">{{ t('addStay') }}</button>
 
       <div class="grid2 settings">
         <label class="field">
-          <span>DNV application submitted <small>(optional)</small></span>
+          <span>{{ t('dnvLabel') }} <small>{{ t('optional') }}</small></span>
           <input type="date" v-model="dnvDate" />
-          <small class="hint">Days after this date are shown as “covered by pending application”. This also shows when the UGE has to respond.</small>
+          <small class="hint">{{ t('dnvHint') }}</small>
         </label>
         <label class="field">
-          <span>Calculate as of</span>
+          <span>{{ t('refLabel') }}</span>
           <input type="date" v-model="refDate" />
-          <small class="hint">Defaults to today. Change it to see a past or future date.</small>
+          <small class="hint">{{ t('refHint') }}</small>
         </label>
       </div>
     </section>
 
     <section class="card uge" v-if="uge" :class="{ passed: uge.passed }">
       <template v-if="!uge.supported">
-        <h2>UGE response deadline</h2>
-        <p class="hint">The deadline calculator covers applications submitted in 2026 or 2027 (it needs the Madrid holiday calendar for those years).</p>
+        <h2>{{ t('ugeTitle') }}</h2>
+        <p class="hint">{{ t('ugeUnsupported') }}</p>
       </template>
       <template v-else>
         <div class="uge-head">
           <div>
-            <div class="stat-lbl">UGE must respond by</div>
-            <div class="uge-date">{{ fmt(uge.deadline) }}</div>
-            <div class="stat-sub">{{ daysFrom(uge.deadline) }} · {{ uge.calendarDays }} calendar days after submission</div>
+            <div class="stat-lbl">{{ t('ugeMustRespond') }}</div>
+            <template v-if="uge.paused">
+              <div class="uge-date">{{ t('ugePaused') }}</div>
+              <div class="stat-sub">{{ t('ugePausedSub') }}</div>
+            </template>
+            <template v-else>
+              <div class="uge-date">{{ fmt(uge.deadline) }}</div>
+              <div class="stat-sub">{{ daysFrom(uge.deadline) }} · {{ t('ugeCalendarAfter', { n: uge.calendarDays }) }}</div>
+            </template>
           </div>
           <div class="uge-count">
             <div class="num">{{ uge.passed ? UGE_DAYS : uge.elapsed }}<span>/ {{ UGE_DAYS }}</span></div>
-            <div class="lbl">business days elapsed</div>
+            <div class="lbl">{{ t('ugeElapsed') }}</div>
           </div>
         </div>
         <div class="uge-bar" role="progressbar" :aria-valuenow="uge.elapsed" aria-valuemin="0" :aria-valuemax="UGE_DAYS"><span :style="{ width: ugePct + '%' }"></span></div>
-        <p class="uge-msg" v-if="uge.passed">The 20-business-day period ended on <strong>{{ fmt(uge.deadline) }}</strong>. If no decision was notified by then, the application is generally considered approved by <em>silencio administrativo positivo</em>. Ask an immigration lawyer how to get a certificate confirming it.</p>
-        <p class="uge-msg" v-else><strong>{{ uge.remaining }}</strong> business day{{ uge.remaining === 1 ? '' : 's' }} left, counted from {{ fmt(refDay) }}.</p>
+        <p class="uge-msg" v-if="uge.paused" v-html="t('ugeMsgPaused', { n: uge.remaining, date: fmt(uge.pausedFrom) })"></p>
+        <p class="uge-msg" v-else-if="uge.pausedNow" v-html="t('ugeMsgPausedNow', { n: uge.remaining, date: fmt(refDay), resume: fmt(uge.resumes) })"></p>
+        <p class="uge-msg" v-else-if="uge.passed" v-html="t('ugeMsgPassed', { date: fmt(uge.deadline) })"></p>
+        <p class="uge-msg" v-else v-html="t('ugeMsgLeft', { n: uge.remaining, date: fmt(refDay) })"></p>
         <ul class="facts">
-          <li>Day 0: <strong>{{ fmt(uge.day0) }}</strong>(the day you submitted, even if it was a weekend or holiday). Day 1 is the next business day after it.</li>
-          <li>Saturdays, Sundays and national, Comunidad de Madrid and Madrid city holidays don't count.<template v-if="uge.skipped.length"> Holidays skipped in your period: <span v-for="(h, i) in uge.skipped" :key="h.day">{{ i ? ', ' : '' }}{{ fmt(h.day) }} ({{ h.name }})</span>.</template></li>
+          <li v-html="t('ugeDay0', { date: fmt(uge.day0) })"></li>
+          <li>{{ t('ugeWeekends') }}<template v-if="uge.skipped.length">{{ t('ugeSkipped', { list: skippedList }) }}</template></li>
+          <li v-for="p in uge.pauses" :key="p.index" v-html="p.to != null
+            ? t('ugePause', { i: p.index + 1, from: fmt(p.from), to: fmt(p.to), n: p.calendarDays })
+            : t('ugePauseOpen', { i: p.index + 1, from: fmt(p.from) })"></li>
         </ul>
-        <p class="hint">Estimated under Ley 14/2013 art. 76 and Ley 39/2015 art. 30. The time it takes to deliver the decision to you, and any request for more documents (requerimiento), can pause or shift the deadline.</p>
+
+        <div class="docs-req">
+          <label class="check">
+            <input type="checkbox" v-model="docsRequest.enabled" />
+            <span v-html="t('docsCheck')"></span>
+          </label>
+          <template v-if="docsRequest.enabled">
+            <p class="hint" v-html="t('docsHint')"></p>
+            <div class="trips">
+              <div class="trip trip-labels" aria-hidden="true">
+                <span>#</span><span>{{ t('requested') }}</span><span>{{ t('responded') }}</span><span>{{ t('paused') }}</span><span></span>
+              </div>
+              <div v-for="(q, i) in docsRequest.items" :key="i" class="trip" :class="{ invalid: uge.pauseErrors[i] }">
+                <span class="idx">{{ i + 1 }}</span>
+                <label><span class="m-label">{{ t('requested') }}</span><input type="date" v-model="q.requested" :min="dnvDate" :aria-label="t('reqDateAria', { i: i + 1 })" /></label>
+                <label><span class="m-label">{{ t('responded') }}</span><input type="date" v-model="q.responded" :min="q.requested" :aria-label="t('reqRespAria', { i: i + 1 })" /></label>
+                <span class="len">
+                  <span v-if="requestLength(q)">{{ requestLength(q) }}<small>{{ t('daysUnit', { n: requestLength(q) }) }}</small></span>
+                  <span v-if="q.requested && !q.responded" class="tag">{{ t('waiting') }}</span>
+                </span>
+                <button class="icon" @click="removeRequest(i)" :aria-label="t('removeReqAria', { i: i + 1 })" :title="t('remove')">✕</button>
+                <p v-if="uge.pauseErrors[i]" class="err">{{ t('err_' + uge.pauseErrors[i]) }}</p>
+              </div>
+            </div>
+            <button class="primary" @click="addRequest">{{ t('addRequest') }}</button>
+          </template>
+        </div>
+
+        <p class="hint">{{ t('ugeLegal') }}</p>
       </template>
     </section>
 
@@ -168,65 +233,62 @@ const daysFrom = d => {
       <section class="card status" :class="status">
         <div class="big">
           <div class="num">{{ r.used }}<span>/ {{ MAX_DAYS }}</span></div>
-          <div class="lbl">days used in the 180-day window<br /><small>{{ fmt(r.windowStart) }} → {{ fmt(refDay) }}</small></div>
+          <div class="lbl">{{ t('usedLbl') }}<br /><small>{{ fmt(r.windowStart) }} → {{ fmt(refDay) }}</small></div>
         </div>
         <div class="msg">
           <template v-if="status === 'ok' || status === 'low'">
-            <strong>{{ r.remaining }} day{{ r.remaining === 1 ? '' : 's' }} remaining</strong> in the current window.
-            <span v-if="r.legalUntil != null"><br />If you stay continuously, your last legal day is <strong>{{ fmt(r.legalUntil) }}</strong>.</span>
+            <span v-html="t('remaining', { n: r.remaining })"></span>
+            <span v-if="r.legalUntil != null"><br /><span v-html="t('legalUntil', { date: fmt(r.legalUntil) })"></span></span>
           </template>
-          <template v-else-if="status === 'covered'">
-            <strong>{{ -r.remaining }} day{{ r.remaining === -1 ? '' : 's' }} over the 90-day limit</strong> — covered by your
-            pending DNV application (filed {{ fmt(r.dnv) }}). You may remain in Spain while it is being processed.
-          </template>
+          <span v-else-if="status === 'covered'" v-html="t('covered', { n: -r.remaining, date: fmt(r.dnv) })"></span>
           <template v-else>
-            <strong>{{ -r.remaining }} day{{ r.remaining === -1 ? '' : 's' }} over the 90-day limit.</strong>
-            <span v-if="r.dnvFiledLate"> Your DNV application date is after the day you first exceeded 90 days ({{ fmt(r.firstOverstay) }}) — applications normally must be filed while your stay is still legal.</span>
-            <span v-else> If you have a pending DNV application, enter its date above.</span>
+            <span v-html="t('over', { n: -r.remaining })"></span>
+            <span v-if="r.dnvFiledLate">{{ t('filedLate', { date: fmt(r.firstOverstay) }) }}</span>
+            <span v-else>{{ t('enterDnv') }}</span>
           </template>
         </div>
       </section>
 
       <section class="grid3" :class="{ two: fullStayAtReentry }">
         <div class="card stat">
-          <div class="stat-lbl">Earliest re-entry</div>
+          <div class="stat-lbl">{{ t('earliest') }}</div>
           <div class="stat-val">{{ fmt(r.nextEntry) }}</div>
-          <div class="stat-sub">{{ daysFrom(r.nextEntry) }}<template v-if="r.nextEntry != null"> · up to <strong>{{ r.nextEntryStay }}</strong> day{{ r.nextEntryStay === 1 ? '' : 's' }}</template></div>
-          <p class="hint" v-if="fullStayAtReentry">You can stay the full 90 days from this date: old days drop out of the window as fast as you add new ones.</p>
-          <p class="hint" v-if="r.ongoing">Assumes you leave on {{ fmt(r.searchFrom - 1) }}.</p>
-          <p class="hint" v-else-if="r.lastDay >= refDay">Assumes you leave on {{ fmt(r.lastDay) }}.</p>
+          <div class="stat-sub">{{ daysFrom(r.nextEntry) }}<span v-if="r.nextEntry != null" v-html="t('upTo', { n: r.nextEntryStay })"></span></div>
+          <p class="hint" v-if="fullStayAtReentry">{{ t('fullStayHint') }}</p>
+          <p class="hint" v-if="r.ongoing">{{ t('assumesLeave', { date: fmt(r.searchFrom - 1) }) }}</p>
+          <p class="hint" v-else-if="r.lastDay >= refDay">{{ t('assumesLeave', { date: fmt(r.lastDay) }) }}</p>
         </div>
         <div class="card stat" v-if="!fullStayAtReentry">
-          <div class="stat-lbl">90-day continuous stay</div>
+          <div class="stat-lbl">{{ t('stay90') }}</div>
           <div class="stat-val">{{ fmt(r.milestones[4].date) }}</div>
           <div class="stat-sub">{{ daysFrom(r.milestones[4].date) }}</div>
-          <p class="hint">Earliest date you can enter and stay 90 days in a row. Entering earlier gives you a shorter stay (see the table below).</p>
+          <p class="hint">{{ t('stay90Hint') }}</p>
         </div>
         <div class="card stat">
-          <div class="stat-lbl">Window completely clear</div>
+          <div class="stat-lbl">{{ t('clearWin') }}</div>
           <div class="stat-val">{{ fmt(r.fullReset) }}</div>
           <div class="stat-sub">{{ daysFrom(r.fullReset) }}</div>
-          <p class="hint">180 days after your last recorded day — no past days count any more.</p>
+          <p class="hint">{{ t('clearWinHint') }}</p>
         </div>
       </section>
 
       <section class="card" v-if="r.overstayDays > 0">
-        <h2>Overstay summary</h2>
+        <h2>{{ t('overTitle') }}</h2>
         <ul class="facts">
-          <li>Limit first exceeded on <strong>{{ fmt(r.firstOverstay) }}</strong> (peak {{ r.peak }} days in a window).</li>
-          <li><strong>{{ r.overstayDays }}</strong> day{{ r.overstayDays === 1 ? '' : 's' }} in total were beyond the 90-day limit.</li>
-          <li v-if="r.dnv != null"><strong>{{ r.coveredDays }}</strong> of them fall on/after your DNV application date<template v-if="r.overstayDays - r.coveredDays > 0">; <strong class="warn">{{ r.overstayDays - r.coveredDays }}</strong> are before it</template>.</li>
+          <li v-html="t('overFirst', { date: fmt(r.firstOverstay), peak: r.peak })"></li>
+          <li v-html="t('overTotal', { n: r.overstayDays })"></li>
+          <li v-if="r.dnv != null" v-html="t('overCovered', { c: r.coveredDays, before: r.overstayDays - r.coveredDays })"></li>
         </ul>
-        <p class="hint">Re-entry dates above still apply the normal 90/180 rule to all days you were physically present — that's what border systems (EES) count if you travel on your passport before your residence card is issued.</p>
+        <p class="hint">{{ t('overHint') }}</p>
       </section>
 
       <section class="card">
-        <h2>When can I come back, and for how long?</h2>
+        <h2>{{ t('msTitle') }}</h2>
         <table class="milestones">
-          <thead><tr><th>To stay at least</th><th>Earliest entry date</th><th></th></tr></thead>
+          <thead><tr><th>{{ t('msStay') }}</th><th>{{ t('msEntry') }}</th><th></th></tr></thead>
           <tbody>
             <tr v-for="m in r.milestones" :key="m.days">
-              <td>{{ m.days }} days</td>
+              <td>{{ t('msDays', { n: m.days }) }}</td>
               <td><strong>{{ fmt(m.date) }}</strong></td>
               <td class="muted">{{ daysFrom(m.date) }}</td>
             </tr>
@@ -235,34 +297,34 @@ const daysFrom = d => {
 
         <div class="plan">
           <label class="field">
-            <span>Check a specific entry date</span>
+            <span>{{ t('planLabel') }}</span>
             <input type="date" v-model="planEntry" />
           </label>
           <div v-if="plan" class="plan-result">
-            <template v-if="plan.overlaps">That date is already part of a recorded stay.</template>
-            <template v-else-if="plan.stay === 0">❌ You can't enter on <strong>{{ fmt(plan.day) }}</strong> — the window would already be full.</template>
-            <template v-else>✅ Entering on <strong>{{ fmt(plan.day) }}</strong> you can stay <strong>{{ plan.stay }} day{{ plan.stay === 1 ? '' : 's' }}</strong>, leaving by <strong>{{ fmt(plan.lastDay) }}</strong>.</template>
+            <template v-if="plan.overlaps">{{ t('planOverlaps') }}</template>
+            <span v-else-if="plan.stay === 0" v-html="t('planNo', { date: fmt(plan.day) })"></span>
+            <span v-else v-html="t('planYes', { date: fmt(plan.day), n: plan.stay, last: fmt(plan.lastDay) })"></span>
           </div>
         </div>
       </section>
 
       <section class="card">
-        <h2>Rolling day count</h2>
+        <h2>{{ t('chartTitle') }}</h2>
         <UsageChart :data="chart" :today="refDay" :dnv="r.dnv" />
       </section>
     </template>
 
     <section class="card info">
-      <h2>How this works</h2>
+      <h2>{{ t('infoTitle') }}</h2>
       <ul>
-        <li><strong>90/180 rule:</strong> in any rolling 180-day period you may spend at most 90 days in the Schengen Area. Entry and exit days both count.</li>
-        <li><strong>Overstay tolerance:</strong> if you applied for Spain's Digital Nomad Visa (residence authorisation for international teleworkers) from inside Spain while your stay was still legal, you may remain while the application is processed. This calculator therefore never rejects stays above 90 days — it shows them and still tells you when you could re-enter.</li>
-        <li><strong>Re-entry:</strong> the earliest date on which entering would keep you at or under 90 days in the preceding 180, and how long you could then stay as old days roll out of the window.</li>
-        <li>Your data stays in your browser (localStorage). Nothing is sent anywhere.</li>
+        <li v-html="t('info1')"></li>
+        <li v-html="t('info2')"></li>
+        <li v-html="t('info3')"></li>
+        <li>{{ t('info4') }}</li>
       </ul>
-      <p class="disclaimer">Not legal advice. Rules, processing practice and border-control interpretation can change — check with the Spanish authorities or an immigration lawyer before travelling.</p>
+      <p class="disclaimer">{{ t('disclaimer') }}</p>
     </section>
   </main>
 
-  <footer class="wrap foot">Schengen DNV Calculator · open source · runs entirely in your browser</footer>
+  <footer class="wrap foot">{{ t('footer') }}</footer>
 </template>

@@ -16,39 +16,40 @@ export const UGE_DAYS = 20
 //       local holidays (May 15 / Nov 9 assumed; check once the city's 2027 list is in the BOCM).
 //       Note: some aggregator sites wrongly omit San José (Mar 19) and the Aug 16 transfer.
 // Jan 2028: national holidays only, so applications filed in late Dec 2027 still compute.
+// Names are the official Spanish ones; `city` = Madrid city local holiday, `moved` = original date.
 export const HOLIDAYS = {
-  '2026-01-01': 'Año Nuevo',
-  '2026-01-06': 'Epifanía del Señor',
-  '2026-04-02': 'Jueves Santo',
-  '2026-04-03': 'Viernes Santo',
-  '2026-05-01': 'Fiesta del Trabajo',
-  '2026-05-02': 'Día de la Comunidad de Madrid',
-  '2026-05-15': 'San Isidro (Madrid city)',
-  '2026-08-15': 'Asunción de la Virgen',
-  '2026-10-12': 'Fiesta Nacional de España',
-  '2026-11-02': 'Todos los Santos (moved from Sun 1 Nov)',
-  '2026-11-09': 'La Almudena (Madrid city)',
-  '2026-12-07': 'Día de la Constitución (moved from Sun 6 Dec)',
-  '2026-12-08': 'Inmaculada Concepción',
-  '2026-12-25': 'Navidad',
+  '2026-01-01': { name: 'Año Nuevo' },
+  '2026-01-06': { name: 'Epifanía del Señor' },
+  '2026-04-02': { name: 'Jueves Santo' },
+  '2026-04-03': { name: 'Viernes Santo' },
+  '2026-05-01': { name: 'Fiesta del Trabajo' },
+  '2026-05-02': { name: 'Día de la Comunidad de Madrid' },
+  '2026-05-15': { name: 'San Isidro', city: true },
+  '2026-08-15': { name: 'Asunción de la Virgen' },
+  '2026-10-12': { name: 'Fiesta Nacional de España' },
+  '2026-11-02': { name: 'Todos los Santos', moved: '2026-11-01' },
+  '2026-11-09': { name: 'La Almudena', city: true },
+  '2026-12-07': { name: 'Día de la Constitución', moved: '2026-12-06' },
+  '2026-12-08': { name: 'Inmaculada Concepción' },
+  '2026-12-25': { name: 'Navidad' },
 
-  '2027-01-01': 'Año Nuevo',
-  '2027-01-06': 'Epifanía del Señor',
-  '2027-03-19': 'San José',
-  '2027-03-25': 'Jueves Santo',
-  '2027-03-26': 'Viernes Santo',
-  '2027-05-01': 'Fiesta del Trabajo',
-  '2027-05-15': 'San Isidro (Madrid city)',
-  '2027-08-16': 'Asunción de la Virgen (moved from Sun 15 Aug)',
-  '2027-10-12': 'Fiesta Nacional de España',
-  '2027-11-01': 'Todos los Santos',
-  '2027-11-09': 'La Almudena (Madrid city)',
-  '2027-12-06': 'Día de la Constitución',
-  '2027-12-08': 'Inmaculada Concepción',
-  '2027-12-25': 'Navidad',
+  '2027-01-01': { name: 'Año Nuevo' },
+  '2027-01-06': { name: 'Epifanía del Señor' },
+  '2027-03-19': { name: 'San José' },
+  '2027-03-25': { name: 'Jueves Santo' },
+  '2027-03-26': { name: 'Viernes Santo' },
+  '2027-05-01': { name: 'Fiesta del Trabajo' },
+  '2027-05-15': { name: 'San Isidro', city: true },
+  '2027-08-16': { name: 'Asunción de la Virgen', moved: '2027-08-15' },
+  '2027-10-12': { name: 'Fiesta Nacional de España' },
+  '2027-11-01': { name: 'Todos los Santos' },
+  '2027-11-09': { name: 'La Almudena', city: true },
+  '2027-12-06': { name: 'Día de la Constitución' },
+  '2027-12-08': { name: 'Inmaculada Concepción' },
+  '2027-12-25': { name: 'Navidad' },
 
-  '2028-01-01': 'Año Nuevo',
-  '2028-01-06': 'Epifanía del Señor',
+  '2028-01-01': { name: 'Año Nuevo' },
+  '2028-01-06': { name: 'Epifanía del Señor' },
 }
 
 export const SUPPORTED_FROM = toDay('2026-01-01')
@@ -58,15 +59,24 @@ const holidaySet = new Set(Object.keys(HOLIDAYS).map(toDay))
 
 const weekday = day => new Date(day * 86400000).getUTCDay() // 0 = Sun, 6 = Sat
 export const isWeekend = day => { const w = weekday(day); return w === 0 || w === 6 }
-export const holidayName = day => HOLIDAYS[toIso(day)] ?? null
+/** { name, city?, moved? (day number) } or null */
+export const holidayInfo = day => {
+  const h = HOLIDAYS[toIso(day)]
+  return h ? { ...h, moved: h.moved ? toDay(h.moved) : undefined } : null
+}
 export const isBusinessDay = day => !isWeekend(day) && !holidaySet.has(day)
 
 /**
  * @param submittedIso 'YYYY-MM-DD'
  * @param ref day number used for "elapsed / remaining"
+ * @param requests optional list of { requested, responded } ISO dates of requests for more
+ *   documents (requerimientos, Ley 39/2015 art. 22.1.a). Every day from `requested` to
+ *   `responded` (both inclusive) is skipped like a weekend; counting resumes the day after
+ *   `responded`. With no `responded` date the clock is paused from `requested` on and there is
+ *   no deadline yet. Overlapping requests are merged. Rows with no `requested` date are ignored.
  * Returns null if no date, or { supported:false } outside 2026–2027.
  */
-export function ugeDeadline(submittedIso, ref) {
+export function ugeDeadline(submittedIso, ref, requests = []) {
   const submitted = toDay(submittedIso)
   if (submitted == null) return null
   if (submitted < SUPPORTED_FROM || submitted > SUPPORTED_TO) return { submitted, supported: false }
@@ -74,27 +84,64 @@ export function ugeDeadline(submittedIso, ref) {
   // The submission day is always day 0, even on a weekend or holiday; day 1 is the next business day.
   const day0 = submitted
 
+  const pauseErrors = {} // index in `requests` → message
+  const valid = [] // { from, to, index }; to = null while still waiting for the applicant
+  ;(requests ?? []).forEach((req, index) => {
+    const from = toDay(req?.requested)
+    if (from == null) return
+    const to = toDay(req?.responded)
+    // Errors are message codes, translated in the UI
+    if (from <= day0) pauseErrors[index] = 'requestBeforeSubmission'
+    else if (to != null && to < from) pauseErrors[index] = 'responseBeforeRequest'
+    else valid.push({ from, to, index })
+  })
+  const openFrom = valid.reduce((m, p) => (p.to == null && (m == null || p.from < m) ? p.from : m), null)
+  const inPause = d => valid.some(p => d >= p.from && (p.to == null || d <= p.to))
+  const counts = d => isBusinessDay(d) && !inPause(d)
+
   let deadline = day0
   let count = 0
+  let paused = false // open-ended pause reached before the 20th day
   const skipped = [] // weekday holidays inside the counting period
   while (count < UGE_DAYS) {
+    if (openFrom != null && deadline + 1 >= openFrom) { paused = true; break }
     deadline++
-    if (isBusinessDay(deadline)) count++
-    else if (!isWeekend(deadline)) skipped.push({ day: deadline, name: holidayName(deadline) })
+    if (counts(deadline)) count++
+    else if (!isWeekend(deadline) && !inPause(deadline)) skipped.push({ day: deadline, ...holidayInfo(deadline) })
   }
 
+  const end = paused ? ref : Math.min(ref, deadline)
   let elapsed = 0
-  for (let d = day0 + 1; d <= Math.min(ref, deadline); d++) if (isBusinessDay(d)) elapsed++
+  for (let d = day0 + 1; d <= end; d++) if (counts(d)) elapsed++
+
+  // Pauses that start after the deadline (or after an earlier unanswered request) have no effect
+  const limit = paused ? openFrom : deadline
+  const pauses = valid
+    .filter(p => p.from <= limit)
+    .sort((a, b) => a.from - b.from)
+    .map(p => ({ ...p, calendarDays: p.to == null ? null : p.to - p.from + 1 }))
+  const current = pauses.find(p => ref >= p.from && (p.to == null || ref <= p.to)) ?? null
+  // Resume day for the current pause, following any overlapping/adjacent closed pauses
+  let resumes = current && current.to != null ? current.to + 1 : null
+  for (let next; resumes != null && (next = valid.find(p => p.from <= resumes && (p.to == null || p.to >= resumes)));) {
+    resumes = next.to == null ? null : next.to + 1
+  }
 
   return {
     supported: true,
     submitted,
     day0,
-    deadline,
+    deadline: paused ? null : deadline,
     skipped,
     elapsed,
     remaining: UGE_DAYS - elapsed,
-    calendarDays: deadline - submitted,
-    passed: ref > deadline,
+    calendarDays: paused ? null : deadline - submitted,
+    passed: !paused && ref > deadline,
+    paused,
+    pausedFrom: paused ? openFrom : null,
+    pausedNow: current != null,
+    resumes, // day counting resumes when `ref` is inside a closed pause
+    pauses,
+    pauseErrors,
   }
 }
