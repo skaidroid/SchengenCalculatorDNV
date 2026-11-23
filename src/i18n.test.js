@@ -4,8 +4,10 @@ import { messages, t, lang, esc } from './i18n.js'
 const params = { n: 2, i: 1, c: 1, before: 1, peak: 95, date: 'D', from: 'F', to: 'T', resume: 'R', last: 'L', list: 'X' }
 
 describe('translations', () => {
-  it('English and Spanish have the same keys', () => {
-    expect(Object.keys(messages.es).sort()).toEqual(Object.keys(messages.en).sort())
+  it('every language has the same keys as English', () => {
+    for (const code of Object.keys(messages)) {
+      expect(Object.keys(messages[code]).sort(), code).toEqual(Object.keys(messages.en).sort())
+    }
   })
 
   it('every message renders to a non-empty string in both languages', () => {
