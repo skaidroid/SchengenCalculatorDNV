@@ -51,8 +51,14 @@ body {
   border-bottom: 6px solid var(--accent-2);
   margin-bottom: 24px;
 }
-.hero h1 { margin: 0 0 6px; font-size: clamp(1.5rem, 4vw, 2.1rem); }
+.hero h1 { margin: 0 0 6px; font-size: clamp(1.5rem, 4vw, 2.1rem); text-wrap: balance; }
 .hero .sub { margin: 0; opacity: .92; max-width: 640px; }
+.hero .wrap { position: relative; }
+.lang-switch { float: right; display: flex; margin: 0 0 8px 12px; border: 1px solid rgba(255,255,255,.5); border-radius: 8px; overflow: hidden; }
+.lang-switch button { background: transparent; color: #fff; border: 0; border-radius: 0; padding: 4px 10px; font-size: .82rem; opacity: .85; }
+.lang-switch button + button { border-left: 1px solid rgba(255,255,255,.5); }
+.lang-switch button.active { background: rgba(255,255,255,.95); color: var(--accent); font-weight: 700; opacity: 1; }
+.lang-switch button:hover:not(.active) { opacity: 1; background: rgba(255,255,255,.12); }
 
 .card {
   background: var(--card);
@@ -168,6 +174,13 @@ button.icon:hover { color: var(--over); }
 .uge-bar span { display: block; height: 100%; background: var(--accent-2); }
 .uge.passed .uge-bar span { background: var(--ok); }
 .uge-msg { margin: 0 0 4px; }
+.docs-req { margin: 14px 0 6px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+.docs-req .check { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+.docs-req .check small { font-weight: 400; color: var(--muted); }
+.docs-req .check input { width: 18px; height: 18px; margin: 0; }
+.docs-req > .hint { margin: 0; }
+.docs-req .trips { margin-bottom: 0; }
+.docs-req > button { align-self: flex-start; }
 
 .info ul { padding-left: 20px; margin: 8px 0; }
 .info li { margin-bottom: 6px; }

@@ -25,10 +25,9 @@ export function todayDay() {
   return Math.floor(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) / MS_PER_DAY)
 }
 
-export function formatDay(day) {
-  return new Date(day * MS_PER_DAY).toLocaleDateString(undefined, {
-    timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
-  })
+/** @param locale BCP 47 tag; undefined = browser default */
+export function formatDay(day, locale, opts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) {
+  return new Date(day * MS_PER_DAY).toLocaleDateString(locale, { timeZone: 'UTC', ...opts })
 }
 
 /**
@@ -41,9 +40,10 @@ export function collectDays(trips, openEnd) {
   trips.forEach((t, i) => {
     const a = toDay(t.entry)
     const b = t.exit ? toDay(t.exit) : openEnd
-    if (a == null) { if (t.exit) errors[i] = 'Entry date is missing'; return }
+    // Errors are message codes, translated in the UI
+    if (a == null) { if (t.exit) errors[i] = 'entryMissing'; return }
     if (b == null) return
-    if (b < a) { errors[i] = 'Exit is before entry'; return }
+    if (b < a) { errors[i] = 'exitBeforeEntry'; return }
     for (let d = a; d <= b; d++) days.add(d)
   })
   return { days, errors }

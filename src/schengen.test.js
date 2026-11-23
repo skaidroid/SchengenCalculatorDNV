@@ -19,7 +19,7 @@ describe('basic counting', () => {
 
   it('flags exit before entry', () => {
     const { errors } = collectDays([{ entry: '2026-01-10', exit: '2026-01-01' }], 0)
-    expect(errors[0]).toBeTruthy()
+    expect(errors[0]).toBe('exitBeforeEntry')
   })
 })
 
