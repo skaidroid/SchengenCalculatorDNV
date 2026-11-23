@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ugeDeadline } from './uge.js'
+import { ugeDeadline, businessDaysBetween } from './uge.js'
 import { toDay, toIso } from './schengen.js'
 
 const dl = (iso, ref = iso) => ugeDeadline(iso, toDay(ref))
@@ -73,7 +73,15 @@ describe('UGE 20 business-day deadline', () => {
       expect(r.elapsed).toBe(4)
       expect(r.pausedNow).toBe(true)
       expect(toIso(r.resumes)).toBe('2026-02-14')
-      expect(r.pauses[0].calendarDays).toBe(5)
+      expect(r.pauses[0].businessDays).toBe(5)
+    })
+
+    it('paused days count only UGE work days', () => {
+      // Fri Oct 30 – Mon Nov 9 2026: 11 calendar days, minus 2 weekends and the Nov 2 / Nov 9 holidays
+      expect(businessDaysBetween(toDay('2026-10-30'), toDay('2026-11-09'))).toBe(5)
+      const r = ugeDeadline('2026-10-29', 0, req('2026-10-30', '2026-11-09'))
+      expect(r.pauses[0].businessDays).toBe(5)
+      expect(businessDaysBetween(toDay('2026-02-07'), toDay('2026-02-08'))).toBe(0) // weekend only
     })
 
     it('multiple requests each pause the count', () => {
